@@ -1,0 +1,19 @@
+# build artifacts
+dist/
+coverage/
+node_modules/
+
+# pnpm files
+.pnpm-store/
+.pnpm-debug.log
+
+# editor
+.vscode/
+.idea/
+
+# AccordKit traces (if local dev)
+.accordkit/
+logs/
+*.log
+
+docs/
