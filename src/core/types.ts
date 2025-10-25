@@ -1,13 +1,23 @@
 /**
- * AccordKit normalized event and tracing types.
- * These types are intentionally provider-agnostic and safe for offline testing and replay.
- * See docs/CORE.md for schema notes and evolution policy.
+ * Standard severity levels for trace events, ordered from least to most severe.
+ * - `debug`: Detailed information for debugging purposes.
+ * - `info`: General informational messages about application state.
+ * - `warn`: Indicates a potential problem that does not prevent the operation from completing.
+ * - `error`: Indicates a failure or error that prevented an operation from completing.
  */
-
-/** Standard severity levels for trace events. */
 export type TraceLevel = 'debug' | 'info' | 'warn' | 'error';
 
-/** Known AI provider identifiers. */
+/**
+ * A list of known AI provider identifiers.
+ * This helps normalize events coming from different LLM SDKs.
+ * - `openai`
+ * - `anthropic`
+ * - `vertex` (Google Vertex AI)
+ * - `mistral`
+ * - `ollama`
+ * - `azureopenai`
+ * - `other` (For any other provider)
+ */
 export type Provider =
   | 'openai'
   | 'anthropic'
@@ -102,7 +112,11 @@ export interface ModelUsageEvent extends BaseEvent {
   cost?: number;
 }
 
-/** OTLP-style span event for non-LLM operations and timings. */
+/**
+ * An event representing a timed operation, similar to a span in OpenTelemetry.
+ * Useful for instrumenting non-LLM operations like database queries, API calls, or function executions.
+ * @see https://opentelemetry.io/docs/concepts/signals/traces/#spans
+ */
 export interface SpanEvent extends BaseEvent {
   type: 'span';
   /** A descriptive name for the operation (e.g., 'db:query', 'api:call'). */

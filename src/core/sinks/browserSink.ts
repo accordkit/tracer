@@ -2,29 +2,71 @@
 import type { TracerEvent } from '../types';
 import type { BufferedSink } from './types';
 
+/**
+ * Defines the delivery strategy for events in the browser.
+ * - `immediate`: Events are written to `localStorage` as they are received.
+ * - `buffered`: Events are collected in an in-memory queue and flushed periodically.
+ */
 export type BrowserDeliveryMode = 'immediate' | 'buffered';
 
+/**
+ * Configuration options for the `BrowserSink`.
+ */
 export interface BrowserSinkOptions {
-  /** Storage key prefix used in immediate mode (default: 'accordkit'). */
+  /**
+   * A prefix for the key used when storing events in `localStorage`.
+   * The final key will be `[storageKeyPrefix]:[sessionId]`.
+   * This is used in `immediate` mode, and in `buffered` mode if no `endpoint` is provided.
+   * @default 'accordkit'
+   */
   storageKeyPrefix?: string;
-  /** Delivery behavior: per-event localStorage write or buffered with periodic flush. */
+  /**
+   * The delivery strategy for events.
+   * - `immediate`: Write each event to `localStorage` right away.
+   * - `buffered`: Batch events in memory and flush them periodically.
+   * @default 'immediate'
+   */
   delivery?: BrowserDeliveryMode;
-  /** Batch size threshold for buffered mode. */
+  /**
+   * The number of events to collect in the buffer before triggering a flush.
+   * Only applies to `buffered` delivery mode.
+   * @default 20
+   */
   batchSize?: number;
-  /** Flush interval in ms for buffered mode. */
+  /**
+   * The maximum time in milliseconds to wait before flushing the buffer, regardless of its size.
+   * Only applies to `buffered` delivery mode.
+   * @default 1000
+   */
   flushIntervalMs?: number;
-  /** Optional HTTP endpoint; buffered flush will POST (sendBeacon if available). */
+  /**
+   * An optional HTTP endpoint URL to send buffered events to.
+   * When provided, `buffered` mode will POST event batches to this URL
+   * using `navigator.sendBeacon` if available, falling back to `fetch`.
+   * If not provided, `buffered` mode will flush to `localStorage`.
+   */
   endpoint?: string;
-  /** Max events kept in memory before dropping oldest in buffered mode. */
+  /**
+   * The maximum number of events to keep in the in-memory buffer.
+   * If the buffer exceeds this size, the oldest events will be dropped.
+   * This prevents unbounded memory growth.
+   * Only applies to `buffered` delivery mode.
+   * @default 2000
+   */
   maxBuffer?: number;
 }
 
 /**
- * Browser sink that either appends JSON lines to localStorage (immediate)
- * or buffers events in-memory and flushes periodically / on demand.
+ * A sink for browser environments that persists tracer events.
  *
- * When `endpoint` is provided in buffered mode, flush attempts to deliver
- * via `navigator.sendBeacon` (preferred) or `fetch` as a fallback.
+ * It supports two delivery modes:
+ * 1.  **`immediate`**: Writes each event as a JSON line to `localStorage` as it occurs.
+ *     This is simple and durable but can be slow due to frequent `localStorage` access.
+ *
+ * 2.  **`buffered`**: Collects events in an in-memory queue and flushes them in batches.
+ *     Flushing occurs when the batch size is reached, on a timer, or when the page is hidden.
+ *     If an `endpoint` is configured, batches are sent via HTTP POST (`sendBeacon` or `fetch`).
+ *     Otherwise, batches are written to `localStorage`. This mode is more performant for high-volume tracing.
  */
 export class BrowserSink implements BufferedSink {
   private storageKeyPrefix: string;
@@ -37,6 +79,10 @@ export class BrowserSink implements BufferedSink {
   private queue: Array<{ sessionId: string; e: TracerEvent }> = [];
   private timer?: ReturnType<typeof setInterval>;
 
+  /**
+   * Creates an instance of BrowserSink.
+   * @param opts - Configuration options for the sink.
+   */
   constructor(opts: BrowserSinkOptions = {}) {
     this.storageKeyPrefix = opts.storageKeyPrefix ?? 'accordkit';
     this.delivery = opts.delivery ?? 'immediate';
@@ -63,7 +109,12 @@ export class BrowserSink implements BufferedSink {
     }
   }
 
-  /** @inheritdoc */
+  /**
+   * Writes a tracer event.
+   *
+   * In `immediate` mode, the event is immediately appended to `localStorage`.
+   * In `buffered` mode, the event is added to an in-memory queue for later flushing.
+   */
   write(sessionId: string, e: TracerEvent): void {
     if (this.delivery === 'immediate') {
       const k = `${this.storageKeyPrefix}:${sessionId}`;
@@ -83,7 +134,15 @@ export class BrowserSink implements BufferedSink {
     }
   }
 
-  /** Flush buffered events (no-op in immediate mode). */
+  /**
+   * Flushes any buffered events.
+   *
+   * This method is a no-op if the `delivery` mode is `immediate`.
+   * In `buffered` mode, it sends the current batch of events.
+   * If an `endpoint` is configured, it sends the data as a POST request
+   * using `navigator.sendBeacon` or `fetch`. Otherwise, it writes the events
+   * to `localStorage`.
+   */
   async flush(): Promise<void> {
     if (this.delivery !== 'buffered') return;
     if (this.queue.length === 0) return;
@@ -136,7 +195,12 @@ export class BrowserSink implements BufferedSink {
     }
   }
 
-  /** Clear timer and flush remaining buffered events. */
+  /**
+   * Cleans up resources used by the sink.
+   *
+   * This method stops the periodic flushing timer (in `buffered` mode)
+   * and performs a final flush of any remaining events in the buffer.
+   */
   async close(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     await this.flush();

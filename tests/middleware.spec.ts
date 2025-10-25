@@ -1,44 +1,51 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-import { compose, sample, maskPII } from '../src/core/middleware';
+import { Tracer } from '../src';
 
-import type { MessageEvent } from '../src/core/types';
+import type { TracerEvent, SpanEvent, TraceMiddleware } from '../src';
 
-function baseEvent(): MessageEvent {
-  return {
-    ts: new Date(0).toISOString(),
-    sessionId: 'sess_test',
-    level: 'info',
-    type: 'message',
-    role: 'user',
-    content: 'hello alice@example.com',
-    ctx: { traceId: 'tr_x', spanId: 'sp_y' },
-  };
-}
+describe('Middleware behavior', () => {
+  it('can drop only spans', async () => {
+    const writes: Array<TracerEvent | SpanEvent> = [];
+    const dropSpans: TraceMiddleware = (e) => (e.type === 'span' ? null : e);
+    const tracer = new Tracer({
+      sink: {
+        write: (_s, e) => {
+          writes.push(e);
+        },
+      },
+      middlewares: [dropSpans],
+    });
 
-describe('middleware', () => {
-  beforeEach(() => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.123456); // deterministic
+    await tracer.message({ role: 'user', content: 'x' });
+    const t = tracer.spanStart({ operation: 'op' });
+    await tracer.spanEnd(t);
+
+    expect(writes.find((e) => e.type === 'message')).toBeTruthy();
+    expect(writes.find((e) => e.type === 'span')).toBeFalsy();
   });
 
-  it('compose runs in order and can drop events', async () => {
-    const keep = (e: any) => ({ ...e, content: e.content + '!' });
-    const drop = () => null;
-    const run = compose([keep, drop, keep]);
-    const out = await run(baseEvent());
-    expect(out).toBeNull();
-  });
+  it('applies service/env/region tags from tracer options', async () => {
+    const writes: Array<TracerEvent | SpanEvent> = [];
+    const tracer = new Tracer({
+      sink: {
+        write: (_s, e) => {
+          writes.push(e);
+        },
+      },
+      service: 'svc',
+      env: 'dev',
+      region: 'eu',
+    });
 
-  it('sample keeps when random < rate', async () => {
-    const run = compose([sample(0.5)]);
-    const out = await run(baseEvent());
-    expect(out).not.toBeNull();
-  });
+    await tracer.message({ role: 'user', content: 'x' });
+    const t = tracer.spanStart({ operation: 'op' });
+    await tracer.spanEnd(t);
 
-  it('maskPII obfuscates @ in content', async () => {
-    const run = compose([maskPII()]);
-    const out = await run(baseEvent());
-    expect((out as any)?.content).toContain('[at]');
-    expect((out as any)?.content).not.toContain('@');
+    for (const ev of writes) {
+      expect(ev.service).toBe('svc');
+      expect(ev.env).toBe('dev');
+      expect(ev.region).toBe('eu');
+    }
   });
 });

@@ -5,20 +5,60 @@ import { join } from 'node:path';
 import type { TracerEvent } from '../types';
 import type { BufferedSink } from './types';
 
+/**
+ * Defines the delivery strategy for events to the file system.
+ * - `immediate`: Events are written synchronously to a file as they are received.
+ * - `buffered`: Events are collected in an in-memory queue and flushed periodically in batches.
+ */
 export type FileDeliveryMode = 'immediate' | 'buffered';
 
+/**
+ * Configuration options for the `FileSink`.
+ */
 export interface FileSinkOptions {
+  /**
+   * The base directory where log files will be stored.
+   * Each session will have its own `.jsonl` file inside this directory.
+   * @default '~/.accordkit/logs' (resolved via `os.homedir()`)
+   */
   base?: string;
+  /**
+   * The delivery strategy for events.
+   * - `immediate`: Write each event to its file synchronously.
+   * - `buffered`: Batch events in memory and flush them periodically.
+   * @default 'immediate'
+   */
   delivery?: FileDeliveryMode;
+  /**
+   * The number of events to collect in a session's buffer before triggering a flush.
+   * Only applies to `buffered` delivery mode.
+   * @default 100
+   */
   batchSize?: number;
+  /**
+   * The maximum time in milliseconds to wait before flushing buffers, regardless of their size.
+   * Only applies to `buffered` delivery mode.
+   * @default 1000
+   */
   flushIntervalMs?: number;
+  /**
+   * The maximum total number of events to keep in memory across all session buffers.
+   * If the total exceeds this size, the oldest events from the largest buffer will be dropped.
+   * This prevents unbounded memory growth.
+   * Only applies to `buffered` delivery mode.
+   * @default 5000
+   */
   maxBuffer?: number;
 }
 
 /**
- * Node.js file-based sink that appends events as JSONL lines.
- * Defaults to immediate/synchronous appends to `~/.accordkit/logs`.
- * Buffered mode is available for higher throughput with `flush()`/`close()`.
+ * A sink for Node.js environments that persists tracer events to the local file system.
+ * Events are stored in JSON Lines (`.jsonl`) format, with a separate file for each session ID.
+ *
+ * It supports two delivery modes:
+ * 1.  **`immediate`**: Synchronously appends each event to its corresponding file. This is simple and durable.
+ * 2.  **`buffered`**: Collects events in memory and writes them to files in batches. This offers higher throughput
+ *     and is recommended for high-volume tracing. Flushing occurs when a batch is full, on a timer, or manually.
  */
 export class FileSink implements BufferedSink {
   private base: string;
@@ -30,6 +70,10 @@ export class FileSink implements BufferedSink {
   private totalBuffered = 0;
   private timer?: ReturnType<typeof setInterval>;
 
+  /**
+   * Creates an instance of FileSink.
+   * @param opts - Configuration options for the sink.
+   */
   constructor(opts: FileSinkOptions = {}) {
     this.base = opts.base ?? join(homedir(), '.accordkit', 'logs');
     this.delivery = opts.delivery ?? 'immediate';
@@ -42,7 +86,12 @@ export class FileSink implements BufferedSink {
     }
   }
 
-  /** @inheritdoc */
+  /**
+   * Writes a tracer event to a file.
+   *
+   * In `immediate` mode, the event is synchronously appended to the session's log file.
+   * In `buffered` mode, the event is added to an in-memory buffer for the session.
+   */
   write(sessionId: string, e: TracerEvent) {
     if (this.delivery == 'immediate') {
       mkdirSync(this.base, { recursive: true });
@@ -62,12 +111,23 @@ export class FileSink implements BufferedSink {
     }
   }
 
+  /**
+   * Flushes all buffered events for all sessions to their respective files.
+   *
+   * This method is a no-op if the `delivery` mode is `immediate`.
+   * In `buffered` mode, it forces a write of any pending events in memory.
+   */
   async flush(): Promise<void> {
     for (const [sid] of Array.from(this.buffers.entries())) {
       this.flushSession(sid);
     }
   }
 
+  /**
+   * Cleans up resources used by the sink.
+   *
+   * This method stops the periodic flushing timer and performs a final flush of any remaining events.
+   */
   async close(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     await this.flush();

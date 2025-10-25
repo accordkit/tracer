@@ -4,58 +4,128 @@ import {
   nowISO,
   type BufferedSink,
   type Sink,
+  type SpanEvent,
   type TraceMiddleware,
   type TracerEvent,
 } from './core';
 
-/** Narrow a TracerEvent union by its discriminant type. */
+/**
+ * Narrows a `TracerEvent` union by its discriminant `type` property.
+ * This is useful for creating type-safe event handlers that only deal with a specific kind of event.
+ * @template T The type of the tracer event.
+ */
 type EventByType<T extends TracerEvent['type']> = Extract<TracerEvent, { type: T }>;
 
-/** Input shape accepted by `emit` (base fields are injected inside `emit`). */
+/**
+ * Defines the input shape accepted by the `emit` method.
+ * The base fields (`ts`, `sessionId`, `level`, `ctx`) are injected by `emit`, so they are omitted from this type.
+ * The `ctx` field is optional, and if not provided, a new trace context will be created.
+ * @template T The type of the tracer event.
+ */
 type EmitInput<T extends TracerEvent> = Omit<T, 'ts' | 'sessionId' | 'level' | 'ctx'> & {
   ctx?: T['ctx'];
 };
 
-/** Log level used for events emitted by the tracer. */
+/**
+ * The log level for events emitted by the tracer.
+ * - `debug`: Verbose logs for debugging purposes.
+ * - `info`: Informational messages about the system's state.
+ * - `warn`: Warnings about potential issues.
+ * - `error`: Errors that have occurred.
+ */
 export type Level = 'debug' | 'info' | 'warn' | 'error';
 
-/** Token returned from {@link Tracer.spanStart}; pass it to {@link Tracer.spanEnd}. */
+/**
+ * A lightweight token representing an in-flight span.
+ * This token is returned from {@link Tracer.spanStart} and should be passed to {@link Tracer.spanEnd} to complete the span.
+ * It contains the trace context and other metadata associated with the span.
+ */
 export interface SpanToken {
-  /** Trace context associated with this span. Reuse it on related events. */
+  /**
+   * The trace context associated with this span.
+   * This should be reused on related events to link them to the same trace.
+   */
   ctx: { traceId: string; spanId: string; parentSpanId?: string };
-  /** Operation name (e.g., `db.query`, `http.request`). */
+  /** The name of the operation being traced (e.g., `db.query`, `http.request`). */
   operation: string;
-  /** Start time (epoch ms). */
+  /** The name of the service where the operation is taking place (e.g., `user-service`, `payment-service`). */
+  service?: string;
+  /** The name of the environment where the service is running (e.g., `dev`, `prod`). */
+  env?: string;
+  /** The name of the region where the service is located (e.g., `us-east-1`, `eu-west-1`). */
+  region?: string;
+  /** The start time of the span in milliseconds since the epoch. */
   t0: number;
-  /** Span attributes captured at start. */
+  /** A record of attributes captured at the start of the span. */
   attrs?: Record<string, unknown>;
 }
 
-/** Options to construct a {@link Tracer} instance. */
+/**
+ * The options for starting a new span.
+ */
+export type SpanStartOptions = {
+  /** The name of the operation being traced (e.g., `db.query`, `http.request`). */
+  operation: string;
+  /** The name of the service where the operation is taking place (e.g., `user-service`, `payment-service`). */
+  service?: string;
+  /** The name of the environment where the service is running (e.g., `dev`, `prod`). */
+  env?: string;
+  /** The name of the region where the service is located (e.g., `us-east-1`, `eu-west-1`). */
+  region?: string;
+  /** A record of attributes to associate with the span. */
+  attrs?: Record<string, unknown>;
+  /**
+   * The parent span to which this span is a child.
+   * This can be a `SpanToken`, an object with `traceId` and `spanId`, or an object with a `ctx` property containing the trace context.
+   */
+  parent?:
+    | SpanToken
+    | { traceId: string; spanId: string }
+    | { ctx: { traceId: string; spanId: string } };
+};
+
+/**
+ * The options for constructing a new {@link Tracer} instance.
+ */
 export interface TracerOptions {
-  /** Optional fixed session id; auto-generated if omitted. */
+  /**
+   * An optional fixed session ID. If not provided, a new session ID will be generated automatically.
+   * A session ID is a unique identifier for a sequence of related traces.
+   */
   sessionId?: string;
-  /** Destination that persists events (file, browser, http, etc.). */
+  /**
+   * The destination that persists events, such as a file, browser console, or HTTP endpoint.
+   * The sink is responsible for writing events to the desired output.
+   */
   sink: Sink | BufferedSink;
-  /** Middlewares to transform/sample/drop events. */
+  /**
+   * An array of middlewares to transform, sample, or drop events before they are sent to the sink.
+   * Middlewares are executed in the order they are provided.
+   */
   middlewares?: TraceMiddleware[];
-  /** Default log level applied to emitted events. */
+  /**
+   * The default log level to apply to emitted events.
+   * This can be overridden on a per-event basis.
+   */
   defaultLevel?: Level;
-  /** Optional environment tags propagated on each event. */
+  /**
+   * Optional environment tags that are propagated on each event.
+   * These tags provide context about the service, environment, and region where the event originated.
+   */
   service?: string;
   env?: string;
   region?: string;
 }
 
 /**
- * Lightweight, vendor-agnostic tracer that emits normalized AccordKit events
- * to a pluggable {@link Sink}. Middlewares can transform or drop events.
+ * A lightweight, vendor-agnostic tracer that emits normalized AccordKit events to a pluggable {@link Sink}.
+ * Middlewares can be used to transform or drop events before they are sent to the sink.
  *
- * If the provided sink implements {@link BufferedSink}, `flush()` and `close()` will
- * be proxied for graceful delivery on shutdown.
+ * If the provided sink implements the {@link BufferedSink} interface, the `flush()` and `close()` methods will be proxied
+ * to allow for graceful delivery of events on shutdown.
  */
 export class Tracer {
-  /** The logical session id used to partition trace logs. */
+  /** The logical session ID used to partition trace logs. */
   public readonly sessionId: string;
 
   private sink: Sink | BufferedSink;
@@ -64,7 +134,8 @@ export class Tracer {
   private tags: { service?: string; env?: string; region?: string };
 
   /**
-   * Create a new tracer.
+   * Creates a new tracer with the specified options.
+   * @param opts The options for configuring the tracer.
    */
   constructor(opts: TracerOptions) {
     this.sessionId = opts.sessionId || `sess_${Math.random().toString(36).slice(2)}_${Date.now()}`;
@@ -75,7 +146,9 @@ export class Tracer {
   }
 
   /**
-   * Compose a base event with defaults and run middleware + sink.
+   * Composes a base event with default values, runs it through the middleware chain, and sends it to the sink.
+   * @param e The event to emit.
+   * @returns A promise that resolves when the event has been sent to the sink.
    * @internal
    */
   private emit<T extends TracerEvent>(e: EmitInput<T>): Promise<void | unknown> {
@@ -96,7 +169,9 @@ export class Tracer {
   }
 
   /**
-   * Emit a `message` event (system/user/assistant/tool).
+   * Emits a `message` event, which can be from the system, user, assistant, or a tool.
+   * @param e The message event to emit.
+   * @returns A promise that resolves when the event has been sent to the sink.
    */
   message(
     e: Omit<EventByType<'message'>, 'ts' | 'sessionId' | 'level' | 'type' | 'ctx'> & {
@@ -107,7 +182,9 @@ export class Tracer {
   }
 
   /**
-   * Emit a `tool_call` event.
+   * Emits a `tool_call` event, which represents a call to a tool.
+   * @param e The tool call event to emit.
+   * @returns A promise that resolves when the event has been sent to the sink.
    */
   toolCall(
     e: Omit<EventByType<'tool_call'>, 'ts' | 'sessionId' | 'level' | 'type' | 'ctx'> & {
@@ -118,7 +195,9 @@ export class Tracer {
   }
 
   /**
-   * Emit a `tool_result` event.
+   * Emits a `tool_result` event, which represents the result of a tool call.
+   * @param e The tool result event to emit.
+   * @returns A promise that resolves when the event has been sent to the sink.
    */
   toolResult(
     e: Omit<EventByType<'tool_result'>, 'ts' | 'sessionId' | 'level' | 'type' | 'ctx'> & {
@@ -129,7 +208,9 @@ export class Tracer {
   }
 
   /**
-   * Emit a `usage` event (tokens/cost).
+   * Emits a `usage` event, which contains information about token usage and cost.
+   * @param e The usage event to emit.
+   * @returns A promise that resolves when the event has been sent to the sink.
    */
   usage(
     e: Omit<EventByType<'usage'>, 'ts' | 'sessionId' | 'level' | 'type' | 'ctx'> & {
@@ -140,39 +221,72 @@ export class Tracer {
   }
 
   /**
-   * Start a span; returns a token to later pass to {@link spanEnd}.
+   * Starts a new span and returns a `SpanToken` that should be passed to {@link spanEnd} to complete the span.
    * Any emitted event can reuse `token.ctx` to relate messages to this span.
+   * @param opts The options for starting the span.
+   * @returns A `SpanToken` representing the in-flight span.
    */
-  spanStart(args: {
-    operation: string;
-    attrs?: Record<string, unknown>;
-    parentSpanId?: string;
-  }): SpanToken {
-    const ctx = args.parentSpanId ? { ...newTraceCtx(args.parentSpanId) } : newTraceCtx();
-    const t0 = Date.now();
-    return { ctx, t0, operation: args.operation, attrs: args.attrs };
+  spanStart(opts: SpanStartOptions): SpanToken {
+    let parentCtx: { traceId: string; spanId: string } | undefined;
+    if (opts.parent) {
+      if ('ctx' in opts.parent) {
+        // SpanToken or { ctx: { traceId, spanId } }
+        parentCtx = opts.parent.ctx;
+      } else if ('traceId' in opts.parent && 'spanId' in opts.parent) {
+        parentCtx = opts.parent;
+      }
+    }
+
+    const ctx = newTraceCtx(parentCtx?.spanId);
+    if (parentCtx?.traceId) {
+      // preserve parent traceId if provided
+      ctx.traceId = parentCtx.traceId;
+    }
+
+    const token: SpanToken = {
+      ctx,
+      operation: opts.operation,
+      service: opts.service,
+      env: opts.env,
+      attrs: opts.attrs,
+      t0: Date.now(),
+    };
+    return token;
   }
 
   /**
-   * Finish a span and emit a `span` event with computed duration.
-   * Defaults to `status='ok'`; set `status='error'` if the span failed.
+   * Finishes a span and emits a `span` event with the computed duration.
+   * The status of the span defaults to `'ok'`, but can be set to `'error'` if the operation failed.
+   * @param token The `SpanToken` returned from `spanStart`.
+   * @param end An optional object containing the status and attributes to add to the span.
+   * @returns A promise that resolves when the span event has been sent to the sink.
    */
   spanEnd(token: SpanToken, end?: { status?: 'ok' | 'error'; attrs?: Record<string, unknown> }) {
-    const durationMs = Date.now() - token.t0;
-
-    return this.emit<EventByType<'span'>>({
+    const durationMs = Math.max(0, Date.now() - token.t0);
+    const ev: SpanEvent = {
+      ts: nowISO(),
+      sessionId: this.sessionId,
+      level: this.level,
       type: 'span',
       operation: token.operation,
       durationMs,
       status: end?.status ?? 'ok',
       attrs: { ...(token.attrs || {}), ...(end?.attrs || {}) },
       ctx: token.ctx,
+      // Prefer span-specific values, fall back to tracer-level tags
+      service: token.service ?? this.tags.service,
+      env: token.env ?? this.tags.env,
+      region: token.region ?? this.tags.region,
+    };
+    return this.runMw(ev).then((x) => {
+      if (x) this.sink.write(this.sessionId, x);
     });
   }
 
   /**
-   * If the underlying sink buffers, flush any queued events to durable storage.
-   * No-op for sinks that write immediately.
+   * If the underlying sink is buffered, this method flushes any queued events to durable storage.
+   * This is a no-op for sinks that write immediately.
+   * @returns A promise that resolves when the flush is complete.
    */
   async flush(): Promise<void> {
     const s = this.sink as Partial<BufferedSink>;
@@ -182,8 +296,9 @@ export class Tracer {
   }
 
   /**
-   * If the underlying sink buffers, close timers and flush remaining events.
-   * No-op for sinks that write immediately.
+   * If the underlying sink is buffered, this method closes any open timers and flushes any remaining events.
+   * This is a no-op for sinks that write immediately.
+   * @returns A promise that resolves when the close operation is complete.
    */
   async close(): Promise<void> {
     const s = this.sink as Partial<BufferedSink>;

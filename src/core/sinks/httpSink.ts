@@ -3,22 +3,77 @@ import { resolveIngestEndpoint, type Region } from './endpoint';
 import type { TracerEvent } from '../types';
 import type { BufferedSink, RetryPolicy } from './types';
 
+/**
+ * Configuration options for the {@link HttpSink}.
+ */
 export interface HttpSinkOptions {
+  /**
+   * The endpoint URL to which events will be sent.
+   * If not provided, it will be resolved using `baseUrl` and `region`.
+   */
   endpoint?: string;
+  /**
+   * The geographical region for the ingest endpoint.
+   * @default 'auto'
+   */
   region?: Region;
+  /**
+   * The base URL for the ingest endpoint.
+   * @default 'https://api.accordkit.dev'
+   */
   baseUrl?: string;
+  /**
+   * A record of custom headers to include in the HTTP request.
+   * The `content-type` header is automatically set to `application/json`.
+   */
   headers?: Record<string, string>;
+  /**
+   * The number of events to buffer before sending them to the endpoint.
+   * @default 20
+   */
   batchSize?: number;
+  /**
+   * The interval in milliseconds at which to flush the buffer, regardless of its size.
+   * @default 1000
+   */
   flushIntervalMs?: number;
+  /**
+   * The maximum number of events to keep in the buffer before dropping the oldest ones.
+   * @default 5000
+   */
   maxBuffer?: number;
+  /**
+   * The retry policy for handling transient failures when sending events.
+   * @default { retries: 3, baseMs: 250, maxMs: 4000, jitter: true }
+   */
   retry?: RetryPolicy;
+  /**
+   * A callback function that is called when events are dropped.
+   * @param reason The reason why the events were dropped (`queue_full` or `retry_exhausted`).
+   * @param dropped The number of events that were dropped.
+   */
   onDrop?: (reason: 'queue_full' | 'retry_exhausted', dropped: number) => void;
 }
 
 /**
- * HTTP sink that batches events and POSTs to a configured endpoint.
- * Provides retries with exponential backoff + optional jitter for transient failures.
- * Best-effort and non-throwing by default.
+ * An HTTP sink that batches events and sends them to a configured endpoint via a POST request.
+ * It provides a retry mechanism with exponential backoff and optional jitter for transient failures.
+ * By default, it is a best-effort, non-throwing sink, meaning it will not throw errors if events fail to be delivered.
+ *
+ * @example
+ * ```typescript
+ * const sink = new HttpSink({
+ *   endpoint: 'https://my-collector.com/ingest',
+ *   batchSize: 100,
+ *   flushIntervalMs: 5000,
+ * });
+ *
+ * const tracer = new Tracer({ sink });
+ *
+ * // ... trace events
+ *
+ * await tracer.close(); // Flushes any remaining events
+ * ```
  */
 export class HttpSink implements BufferedSink {
   private endpoint: string;
@@ -33,6 +88,10 @@ export class HttpSink implements BufferedSink {
   private timer?: ReturnType<typeof setInterval>;
   private inflight = false;
 
+  /**
+   * Creates a new `HttpSink` instance.
+   * @param opts The configuration options for the sink.
+   */
   constructor(opts: HttpSinkOptions) {
     this.endpoint =
       opts.endpoint ?? resolveIngestEndpoint({ baseUrl: opts.baseUrl, region: opts.region });
@@ -50,6 +109,15 @@ export class HttpSink implements BufferedSink {
     this.timer.unref?.();
   }
 
+  /**
+   * Adds an event to the queue to be sent to the endpoint.
+   *
+   * If the queue is full (i.e., it has reached `maxBuffer`), the oldest events are dropped to make space for the new one.
+   * If the queue size reaches `batchSize`, a flush is automatically triggered.
+   *
+   * @param sessionId The ID of the session to which the event belongs.
+   * @param e The event to write.
+   */
   write(sessionId: string, e: TracerEvent) {
     this.queue.push({ sessionId, e });
 
@@ -64,6 +132,15 @@ export class HttpSink implements BufferedSink {
     }
   }
 
+  /**
+   * Flushes the queue of events to the configured endpoint.
+   *
+   * If a flush is already in progress, this method will do nothing to prevent concurrent flushes.
+   * The method will attempt to send the batch of events and will retry with exponential backoff if the request fails with a 5xx status code or a 429 (Too Many Requests).
+   * If the request fails for other reasons, or if the retries are exhausted, the events are dropped.
+   *
+   * @returns A promise that resolves when the flush is complete.
+   */
   async flush(): Promise<void> {
     if (this.inflight) return;
     if (this.queue.length === 0) return;
@@ -105,6 +182,12 @@ export class HttpSink implements BufferedSink {
     }
   }
 
+  /**
+   * Clears the flush timer and flushes any remaining events in the queue.
+   * This should be called before the application exits to ensure that all buffered events are sent.
+   *
+   * @returns A promise that resolves when the sink is closed and all events have been flushed.
+   */
   async close(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     await this.flush();
