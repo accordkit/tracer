@@ -2,13 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Tracer } from '../src/tracer';
 
-import type {
-  MessageEvent,
-  Sink,
-  TracerEvent,
-  BufferedSink,
-  TraceMiddleware,
-} from '@accordkit/core';
+import type { TracerEvent, MessageEvent, Sink, BufferedSink, TraceMiddleware } from '../src/core';
 
 // Type guard helper
 const isMessage = (e: TracerEvent): e is MessageEvent => e.type === 'message';

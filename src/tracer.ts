@@ -1,6 +1,12 @@
-import { compose, newTraceCtx, nowISO } from '@accordkit/core';
-
-import type { Sink, BufferedSink, TracerEvent, TraceMiddleware } from '@accordkit/core';
+import {
+  compose,
+  newTraceCtx,
+  nowISO,
+  type BufferedSink,
+  type Sink,
+  type TraceMiddleware,
+  type TracerEvent,
+} from './core';
 
 /** Narrow a TracerEvent union by its discriminant type. */
 type EventByType<T extends TracerEvent['type']> = Extract<TracerEvent, { type: T }>;

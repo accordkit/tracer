@@ -15,14 +15,13 @@ Lightweight, vendor-agnostic instrumentation that emits **normalized AccordKit e
 
 ## Installation
 ```bash
-pnpm add @accordkit/tracer @accordkit/core
-# or: npm install @accordkit/tracer @accordkit/core
+pnpm add @accordkit/tracer
+# or: npm install @accordkit/tracer
 ```
 
 ## Quickstart
 ```ts
-import { Tracer } from '@accordkit/tracer';
-import { FileSink } from '@accordkit/core';
+import { FileSink, Tracer } from '@accordkit/tracer';
 
 const tracer = new Tracer({
   sink: new FileSink({ basePath: './logs' }),
@@ -43,7 +42,7 @@ await tracer.spanEnd(span, { status: 'ok', attrs: { rows: 42 } });
 ```
 
 ## Choosing a Sink
-All sinks implement `Sink` from `@accordkit/core`, exposing a single `write(sessionId, event)` method. Some sinks also implement `BufferedSink`, adding `flush()` and optional `close()` for controlled delivery.
+All sinks implement `Sink` from `@accordkit/tracer`, exposing a single `write(sessionId, event)` method. Some sinks also implement `BufferedSink`, adding `flush()` and optional `close()` for controlled delivery.
 
 - **FileSink (Node.js)** – JSONL per session, optional buffered mode via `delivery: 'buffered'`.
 - **BrowserSink (Web)** – Persists to `localStorage` under `accordkit:{sessionId}`.
@@ -118,6 +117,6 @@ const tracer = new Tracer({ sink: new MemorySink() });
 If you need to assert `flush()`/`close()` calls, implement the `BufferedSink` interface in your test double.
 
 ## Further Reading
-- Core event schema and sink details: `@accordkit/core` docs (`docs/CORE.md`).
+- Core event schema and sink details: `@accordkit/tracer` docs (`docs/CORE.md`).
 - Middleware helpers: `sample(rate)`, `maskPII()`, or roll your own by returning either a transformed event or `null`.
 - Full TypeScript signatures are documented via TSDoc; run `pnpm run docs` in the repo to generate API documentation.
