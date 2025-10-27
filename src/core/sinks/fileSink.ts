@@ -103,8 +103,12 @@ export class FileSink implements BufferedSink {
     }
 
     buf.push(e);
-
     this.totalBuffered++;
+
+    // If a flush is already running, ensure we take another pass after it finishes
+    if (this.flushInFlight) {
+      this.flushRequested = true;
+    }
 
     if (this.totalBuffered > this.maxBuffer) {
       switch (this.overflowPolicy) {

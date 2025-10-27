@@ -88,18 +88,28 @@ describe('FileSink — buffered mode', () => {
     vi.useFakeTimers();
     const base = mkdtempSync(join(tmpdir(), 'ak-buf-'));
     const sink = new FileSink({ base, delivery: 'buffered', batchSize: 100, flushIntervalMs: 10 });
+    const flushSpy = vi.spyOn(sink, 'flush');
 
-    sink.write('s1', msg('s1', 1));
-    sink.write('s1', msg('s1', 2));
+    try {
+      sink.write('s1', msg('s1', 1));
+      sink.write('s1', msg('s1', 2));
 
-    // Advance timers just enough to trigger the interval and wait for the async flush to finish.
-    await vi.advanceTimersByTimeAsync(100);
+      // Advance timers to trigger the interval.
+      await vi.advanceTimersByTimeAsync(10);
 
-    const lines = readLines(join(base, 's1.jsonl'));
-    expect(lines.length).toBe(2);
+      // The timer should have called flush.
+      expect(flushSpy).toHaveBeenCalledOnce();
 
-    vi.useRealTimers();
-    await sink.close();
+      // Wait for the flush promise to resolve, ensuring I/O is complete.
+      await flushSpy.mock.results[0].value;
+
+      const lines = readLines(join(base, 's1.jsonl'));
+      expect(lines.length).toBe(2);
+    } finally {
+      vi.useRealTimers();
+      await sink.close();
+      flushSpy.mockRestore();
+    }
   });
 
   it('chunking by batchSize still yields all lines after flush', async () => {
