@@ -1,4 +1,4 @@
-import type { TracerEvent } from "../types";
+import type { TracerEvent } from '../types';
 
 /**
  * A destination for AccordKit trace events.
@@ -45,6 +45,52 @@ export interface Sink {
    * @returns Void or Promise<void> for async implementations.
    */
   write(sessionId: string, e: TracerEvent): void | Promise<void>;
+}
+
+/**
+ * What to do when a buffered sink reaches capacity.
+ *
+ * - 'auto-flush' (default): accept the write, then immediately trigger a guarded flush.
+ *   Node sinks may temporarily apply backpressure (write() awaits the in-flight flush) *only when over capacity*.
+ *   Browser sinks remain non-blocking and best-effort.
+ * - 'drop-oldest': ring-buffer semantics under sustained overload; never blocks producers.
+ * - 'error': throw on overflow (useful for tests).
+ */
+export type OverflowPolicy = 'auto-flush' | 'drop-oldest' | 'error';
+
+export interface BufferedOptions {
+  /**
+   * The maximum total number of events to keep in memory across all session buffers.
+   * If the total exceeds this size, the oldest events from the largest buffer will be dropped.
+   * This prevents unbounded memory growth.
+   * Only applies to `buffered` delivery mode.
+   * @default 5000
+   */
+  maxBuffer?: number;
+  /**
+   * The number of events to collect in a session's buffer before triggering a flush.
+   * Only applies to `buffered` delivery mode.
+   * @default 100
+   */
+  batchSize?: number;
+  /**
+   * The maximum time in milliseconds to wait before flushing buffers, regardless of their size.
+   * Only applies to `buffered` delivery mode.
+   * @default 1000
+   */
+  flushIntervalMs?: number;
+  /**
+   * The policy to apply when the `maxBuffer` limit is reached.
+   * This determines how the sink behaves when it's under heavy load.
+   *
+   * - `auto-flush`: Immediately triggers a flush.
+   * - `drop-oldest`: Discards the oldest events to make room for new ones.
+   * - `error`: Throw on overflow (useful for tests).
+   *
+   * @see OverflowPolicy
+   * @default 'auto-flush'
+   */
+  overflowPolicy?: OverflowPolicy;
 }
 
 /**

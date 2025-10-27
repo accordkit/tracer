@@ -1,9 +1,10 @@
 import { mkdirSync, appendFileSync } from 'node:fs';
+import { appendFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { TracerEvent } from '../types';
-import type { BufferedSink } from './types';
+import type { BufferedSink, BufferedOptions, OverflowPolicy } from './types';
 
 /**
  * Defines the delivery strategy for events to the file system.
@@ -15,7 +16,7 @@ export type FileDeliveryMode = 'immediate' | 'buffered';
 /**
  * Configuration options for the `FileSink`.
  */
-export interface FileSinkOptions {
+export interface FileSinkOptions extends BufferedOptions {
   /**
    * The base directory where log files will be stored.
    * Each session will have its own `.jsonl` file inside this directory.
@@ -29,26 +30,6 @@ export interface FileSinkOptions {
    * @default 'immediate'
    */
   delivery?: FileDeliveryMode;
-  /**
-   * The number of events to collect in a session's buffer before triggering a flush.
-   * Only applies to `buffered` delivery mode.
-   * @default 100
-   */
-  batchSize?: number;
-  /**
-   * The maximum time in milliseconds to wait before flushing buffers, regardless of their size.
-   * Only applies to `buffered` delivery mode.
-   * @default 1000
-   */
-  flushIntervalMs?: number;
-  /**
-   * The maximum total number of events to keep in memory across all session buffers.
-   * If the total exceeds this size, the oldest events from the largest buffer will be dropped.
-   * This prevents unbounded memory growth.
-   * Only applies to `buffered` delivery mode.
-   * @default 5000
-   */
-  maxBuffer?: number;
 }
 
 /**
@@ -63,12 +44,19 @@ export interface FileSinkOptions {
 export class FileSink implements BufferedSink {
   private base: string;
   private delivery: FileDeliveryMode;
+
+  private buffers: Map<string, TracerEvent[]> = new Map();
+  private totalBuffered = 0;
+
   private batchSize: number;
   private flushIntervalMs: number;
   private maxBuffer: number;
-  private buffers: Map<string, TracerEvent[]> = new Map();
-  private totalBuffered = 0;
+  private overflowPolicy: OverflowPolicy;
+
   private timer?: ReturnType<typeof setInterval>;
+  private closed = false;
+  private flushInFlight: Promise<void> | null = null;
+  private flushRequested = false;
 
   /**
    * Creates an instance of FileSink.
@@ -77,12 +65,18 @@ export class FileSink implements BufferedSink {
   constructor(opts: FileSinkOptions = {}) {
     this.base = opts.base ?? join(homedir(), '.accordkit', 'logs');
     this.delivery = opts.delivery ?? 'immediate';
-    this.batchSize = Math.max(1, opts.batchSize ?? 100);
-    this.flushIntervalMs = Math.max(50, opts.flushIntervalMs ?? 1000);
-    this.maxBuffer = Math.max(this.batchSize, opts.maxBuffer ?? 5000);
+
+    this.batchSize = opts?.batchSize ?? 100;
+    this.flushIntervalMs = opts?.flushIntervalMs ?? 2000;
+    this.maxBuffer = opts?.maxBuffer ?? 5000;
+    this.overflowPolicy = opts?.overflowPolicy ?? 'auto-flush';
 
     if (this.delivery === 'buffered') {
-      this.ensureTimer();
+      this.timer = setInterval(() => {
+        void this.flush();
+      }, this.flushIntervalMs);
+      // @ts-ignore
+      this.timer.unref?.();
     }
   }
 
@@ -93,21 +87,42 @@ export class FileSink implements BufferedSink {
    * In `buffered` mode, the event is added to an in-memory buffer for the session.
    */
   write(sessionId: string, e: TracerEvent) {
+    if (this.closed) return;
+
     if (this.delivery == 'immediate') {
       mkdirSync(this.base, { recursive: true });
-      appendFileSync(join(this.base, `${sessionId}.jsonl`), JSON.stringify(e) + '\n', 'utf8');
+      appendFileSync(this.pathFor(sessionId), JSON.stringify(e) + '\n', 'utf8');
       return;
     }
 
     const buf = this.buffers.get(sessionId) ?? [];
+    if (!this.buffers.has(sessionId)) this.buffers.set(sessionId, buf);
+
+    if (this.totalBuffered >= this.maxBuffer && this.overflowPolicy === 'error') {
+      throw new Error('FileSink buffer full');
+    }
+
     buf.push(e);
 
-    this.buffers.set(sessionId, buf);
     this.totalBuffered++;
 
-    if (buf.length >= this.batchSize || this.totalBuffered >= this.maxBuffer) {
-      if (this.totalBuffered >= this.maxBuffer) this.dropOldest();
-      this.flushSession(sessionId);
+    if (this.totalBuffered > this.maxBuffer) {
+      switch (this.overflowPolicy) {
+        case 'auto-flush': {
+          // Trigger an immediate guarded flush.
+          // Backpressure only while over capacity: return the flush promise
+          // so the caller can await if desired.
+          return this.flush();
+        }
+        case 'drop-oldest': {
+          this.dropOldest();
+          break;
+        }
+        case 'error': {
+          // already handled above; unreachable here
+          break;
+        }
+      }
     }
   }
 
@@ -118,9 +133,40 @@ export class FileSink implements BufferedSink {
    * In `buffered` mode, it forces a write of any pending events in memory.
    */
   async flush(): Promise<void> {
-    for (const [sid] of Array.from(this.buffers.entries())) {
-      this.flushSession(sid);
+    if (this.delivery === 'immediate') return; // nothing to do
+
+    if (this.closed && this.totalBuffered === 0) return;
+
+    if (this.flushInFlight) {
+      this.flushRequested = true;
+      return this.flushInFlight;
     }
+
+    this.flushInFlight = (async () => {
+      try {
+        await mkdir(this.base, { recursive: true });
+
+        do {
+          this.flushRequested = false;
+
+          // Snapshot all current buffers into batches
+          const toWrite = this.drainBatches();
+
+          // Write sequentially per batch to preserve order
+          for (const { sessionId, lines } of toWrite) {
+            if (lines.length === 0) continue;
+
+            const filePath = this.pathFor(sessionId);
+            const payload = lines.join('\n') + '\n';
+            await appendFile(filePath, payload, 'utf8');
+          }
+        } while (this.flushRequested);
+      } finally {
+        this.flushInFlight = null;
+      }
+    })();
+
+    return this.flushInFlight;
   }
 
   /**
@@ -129,39 +175,48 @@ export class FileSink implements BufferedSink {
    * This method stops the periodic flushing timer and performs a final flush of any remaining events.
    */
   async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
     if (this.timer) clearInterval(this.timer);
     await this.flush();
   }
 
-  private ensureTimer() {
-    if (!this.timer) {
-      this.timer = setInterval(() => {
-        for (const [sid, events] of this.buffers) {
-          if (events.length) this.flushSession(sid);
-        }
-      }, this.flushIntervalMs);
-      // @ts-ignore: Node timers expose unref
-      this.timer.unref?.();
-    }
+  private pathFor(sessionId: string) {
+    return join(this.base, `${sessionId}.jsonl`);
   }
 
-  private flushSession(sessionId: string) {
-    const buf = this.buffers.get(sessionId);
-    if (!buf || buf.length === 0) return;
+  private drainBatches(): Array<{ sessionId: string; lines: string[] }> {
+    const out: Array<{ sessionId: string; lines: string[] }> = [];
+    // Walk sessions; keep per-session order; chunk by batchSize
+    for (const [sid, arr] of this.buffers) {
+      if (arr.length === 0) continue;
 
-    const chunk = buf.map((e) => JSON.stringify(e)).join('\n') + '\n';
-    this.buffers.set(sessionId, []);
-    this.totalBuffered -= buf.length;
-    
-    mkdirSync(this.base, { recursive: true });
-    appendFileSync(join(this.base, `${sessionId}.jsonl`), chunk, 'utf8');
+      while (arr.length) {
+        out.push({
+          sessionId: sid,
+          lines: arr.splice(0, this.batchSize).map((e) => JSON.stringify(e)),
+        });
+      }
+      // keep the emptied array for future writes
+      this.buffers.set(sid, arr);
+    }
+
+    // After full drain snapshot, recompute total count (will usually be 0)
+    let cnt = 0;
+    for (const [, arr] of this.buffers) {
+      cnt += arr.length;
+    }
+
+    this.totalBuffered = cnt;
+    return out;
   }
 
   private dropOldest() {
-    for (const [_, arr] of this.buffers) {
+    for (const [sid, arr] of this.buffers) {
       if (arr.length) {
         arr.shift();
         this.totalBuffered = Math.max(0, this.totalBuffered - 1);
+        if (!arr.length) this.buffers.set(sid, arr);
         return;
       }
     }
