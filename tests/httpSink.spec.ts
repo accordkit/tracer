@@ -368,7 +368,6 @@ describe('HttpSink: retry policy extensions', () => {
       vi.fn((url: string, init?: RequestInit) => {
         const body = String(init?.body ?? '');
         const headers = init?.headers ?? {};
-        console.log('fetch called');
         fetchCalls.push({ url, body, headers });
 
         if (schedule.length === 0) {

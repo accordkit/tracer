@@ -220,7 +220,6 @@ export class HttpSink implements BufferedSink {
 
     let attempt = 0;
     for (;;) {
-      console.log('attempt number, ' + attempt);
       try {
         const headers: Record<string, string> = { ...this.headers };
         if (this.idempotencyKey) {
@@ -296,7 +295,6 @@ export class HttpSink implements BufferedSink {
   }
 
   private async sleep(ms: number) {
-    console.log('sleep called with ms: ' + ms);
     if (ms <= 0) return;
     await new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
