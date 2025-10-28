@@ -246,4 +246,4 @@ MIT © AccordKit Contributors
 ## 🤝 Contributing
 
 Issues and PRs welcome!  
-Please follow the [AccordKit Contribution Guide](https://github.com/accordkit/docs/blob/main/CONTRIBUTING.md).
+Please follow the [AccordKit Contribution Guide](https://github.com/accordkit/tracer/blob/main/CONTRIBUTING.md).
