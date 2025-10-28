@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { FileSink } from '../src/core/sinks/fileSink';
 
@@ -60,6 +60,11 @@ describe('FileSink — immediate mode', () => {
 describe('FileSink — buffered mode', () => {
   beforeEach(() => {
     vi.useRealTimers(); // default per test unless we explicitly fake timers
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllTimers();
   });
 
   it('buffers and flushes to disk on flush()', async () => {
