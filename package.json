@@ -26,7 +26,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --reporter=dot",
     "test:watch": "vitest",
-    "docs": "typedoc --out docs src",
+    "docs": "typedoc --options typedoc.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write ."
@@ -46,6 +46,7 @@
     "rimraf": "^6.0.0",
     "tsup": "^8.1.0",
     "typedoc": "^0.28.14",
+    "typedoc-plugin-markdown": "^4.9.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.0"
   }
