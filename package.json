@@ -25,10 +25,10 @@
     "dev": "tsup --watch --clean=false",
     "clean": "rimraf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --reporter=dot",
+    "test": "vitest run --coverage",
     "test:watch": "vitest",
     "docs": "typedoc --options typedoc.json",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write ."
   },
