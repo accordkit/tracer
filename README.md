@@ -1,17 +1,34 @@
-# @accordkit/tracer
+<p align="center">
+  <img src="https://docs.accordkit.dev/img/logo.png" height="80">
+</p>
+
+<h1 align="center">AccordKit - Tracer</h1>
+
+<p align="center">
+  Tracing and observability core for AI & LLM applications.
+  <br />
+  <a href="https://docs.accordkit.dev"><strong>📘 Read the docs</strong></a>
+</p>
+
+---
 
 [![Part of AccordKit](https://img.shields.io/badge/AccordKit-ecosystem-00cc88?style=flat-square)](https://github.com/accordkit)
 
-> **Part of the [AccordKit](https://github.com/accordkit) ecosystem** —  
+> **Part of the [AccordKit](https://github.com/accordkit) ecosystem**  
 > an open, AI-agnostic tracing SDK for LLM-powered and ChatGPT-interoperable applications.  
 > AccordKit gives developers local-first observability: **no vendor lock-in, no opaque dashboards**, just clean event streams and tools that work anywhere.
 
-[🌍 Positioning Map →](https://github.com/accordkit/docs/blob/main/assets/accordkit_positioning_map.png)
-
-Lightweight, vendor-agnostic tracing core for AccordKit — designed for SDKs, AI agents, and self-hosted analytics.  
+Lightweight, vendor-agnostic tracing core for AccordKit; designed for SDKs, AI agents, and self-hosted analytics.  
 Provides a unified `Tracer` interface with message, usage, and span events that can be streamed or batched to any sink.
 
 ---
+
+### 🧭 Overview
+AccordKit Tracer provides a minimal, structured way to log, emit, and visualize events from your AI apps.
+
+- 📄 Local file and HTTP sinks  
+- 🔍 Compatible with any SDK  
+- ⚙️ Built-in OpenAI adapter via `@accordkit/provider-openai`
 
 ## ✨ Features
 
@@ -19,7 +36,7 @@ Provides a unified `Tracer` interface with message, usage, and span events that 
 - **Parent–child span propagation** with accurate `durationMs`.
 - **Middleware pipeline** for sampling, transformation, or enrichment.
 - **Buffered and immediate sinks** with `flush()` / `close()` for graceful shutdowns.
-- **No vendor lock-in** — integrate with your own backend, file sink, or AccordKit Cloud.
+- **No vendor lock-in**; integrate with your own backend, file sink, or AccordKit Cloud.
 
 ---
 

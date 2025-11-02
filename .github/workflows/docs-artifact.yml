@@ -1,0 +1,21 @@
+name: Build and upload reference docs
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - run: pnpm install
+      - run: pnpm typedoc --options typedoc.json --out reference
+      - run: zip -r reference.zip reference
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reference
+          path: reference.zip
