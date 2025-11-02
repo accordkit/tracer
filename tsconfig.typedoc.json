@@ -1,7 +1,21 @@
 {
-    "extends": "./tsconfig.json",
     "compilerOptions": {
-        "noEmit": false
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "strict": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "noEmit": false,
+        "lib": [
+            "ES2022",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "types": [
+            "node"
+        ]
     },
     "include": [
         "src/**/*"
