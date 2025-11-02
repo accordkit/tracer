@@ -2,7 +2,8 @@
   "name": "@accordkit/tracer",
   "version": "0.2.0",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
@@ -20,7 +21,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
+    "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup --watch --clean=false",
     "clean": "rimraf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
