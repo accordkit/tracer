@@ -1,1 +1,18 @@
+# AccordKit Tracer
+# Core tracing SDK for AI applications
+
+# Default owner for all files
 * @faranjit
+
+# Core source code
+/src/ @faranjit
+
+# Tests
+/tests/ @faranjit
+
+# Documentation / Typedoc config
+/typedoc.json @faranjit
+/docs/ @faranjit
+
+# CI/CD configs
+/.github/workflows/ @faranjit
