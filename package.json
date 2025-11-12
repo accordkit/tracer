@@ -1,6 +1,6 @@
 {
   "name": "@accordkit/tracer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Lightweight, vendor-agnostic tracing core for AccordKit; designed for SDKs, AI agents, and self-hosted analytics. Provides a unified Tracer interface with message, usage, and span events that can be streamed or batched to any sink.",
   "repository": {
     "type": "git",
