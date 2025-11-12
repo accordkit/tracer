@@ -124,7 +124,7 @@ export interface SpanEvent extends BaseEvent {
   /** The total duration of the operation in milliseconds. */
   durationMs: number;
   /** The status of the operation. */
-  status?: 'ok' | 'error';
+  status?: 'ok' | 'error' | 'streaming';
   /** A dictionary of arbitrary attributes related to the span. */
   attrs?: Record<string, unknown>;
 }
